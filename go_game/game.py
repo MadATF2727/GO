@@ -31,12 +31,13 @@ def setup_logging():
     root_logger = logging.getLogger()
     root_logger.addHandler(file_handler_error)
 
-class Liberty(object):
+class CrossHair(object):
     def __init__(self, color, x, y, neighbors):
         self.color = color
         self.x = x
         self.y = y
         self.neighbors = neighbors
+
 
 class Player(object):
     def __init__(self, color=None, name=None):
@@ -47,47 +48,178 @@ class Player(object):
 
 class GoGame(object):
     def __init__(self, args):
-        self.board = Board(args.board_size)
         self.black = Player(color='black', name=args.black_player_name)
         self.white = Player(color='white', name=args.white_player_name)
-        self.board.render()
-        prompt= ("{} please enter the x, y location you'd like to play at ").format(self.black.name)
-        xy_str = input(prompt)
-        x = int(xy_str.split(',')[0])
-        y = int(xy_str.split(',')[1])
-        self.board.make_move(x, y, color='black')
+        self.board = Board(args.board_size, self.black, self.white)
+        # self.board.render()
+        # x, y = self.board.get_desired_move(self.black)
+        self.board.make_move(3, 3, color='black')
+        # just for FB post add a white
+        self.board.make_move(7, 2, 'white')
         self.board.render()
 
 
 
 class Board(object):
-    def __init__(self, size=None):
+    def __init__(self, size=None, black=None, white=None):
         if size is None:
             self.size = 13
         elif check_size(size):
             self.size = size
         self.grid = self._initialize_liberties_grid()
+        self.black = black
+        self.white = white
         self.stones = []
+
+    def get_desired_move(self, player):
+
+        prompt = ("{} please enter the x, y location you'd like to play at ").format(player.name)
+        xy_str = input(prompt)
+        x = int(xy_str.split(',')[0])
+        y = int(xy_str.split(',')[1])
+        return x, y
 
     def _check_for_corner(self, x, y):
         return ((x == 0 and y == 0) or (x == 0 and y == self.size - 1)
                 or (x == self.size - 1 and y == self.size - 1) or (x == self.size - 1 and y == 0))
 
+    def _check_in_bounds(self, coord):
+        return coord - 1 > 0 and coord + 1 < self.size
+
     def _get_neighbors(self, x, y):
-        # return neighbors in clockwise order starting from the left
-        return [self.grid[x - 1, y], self.grid[y + 1, y], self.grid[x + 1, y],
-                self.grid[y - 1, x]]
+        if self._check_in_bounds(x) and self._check_in_bounds(y):
+            return {'left':self.grid[x - 1, y],
+                'right':self.grid[x + 1, y],
+                'top': self.grid[x, y + 1],
+                'bottom':self.grid[x, y - 1]}
+        elif self._check_in_bounds(x) and not self._check_in_bounds(y):
+            if y - 1 < 0:
+                return {'left': self.grid[x - 1, y],
+                    'right': self.grid[x + 1, y],
+                    'top': self.grid[x, y + 1],
+                    'bottom': None}
+            elif y + 1 > self.size:
+                return {'left': self.grid[x - 1, y],
+                        'right': self.grid[x + 1, y],
+                        'top': None,
+                        'bottom': self.grid[x, y - 1]}
+        elif not self._check_in_bounds(x) and self._check_in_bounds(y):
+            if x - 1 < 0:
+                return {'left': None,
+                        'right': self.grid[x + 1, y],
+                        'top': self.grid[y + 1, y],
+                        'bottom': self.grid[x, y - 1]}
+            elif x + 1 > self.size:
+                return {'left': self.grid[x - 1, y],
+                        'right': None,
+                        'top': self.grid[x, y + 1],
+                        'bottom': self.grid[x, y - 1]}
+        elif not self._check_in_bounds(x) and not self._check_in_bounds(y):
+            if x - 1 < 0 and y - 1 < 0:
+                # bottom left corner
+                return {'left': None,
+                        'right': self.grid[x + 1, y],
+                        'top': self.grid[x, y + 1],
+                        'bottom': None}
+            elif x - 1 < 0 and y + 1 > self.size-1:
+                # top left corner
+                return {'left': None,
+                        'right': self.grid[x + 1, y],
+                        'top': None,
+                        'bottom': self.grid[x, y - 1]}
+            elif x + 1 > self.size - 1 and y + 1 > self.size - 1:
+                # top right corner
+                return {'left': self.grid[x - 1, y],
+                        'right': None,
+                        'top': None,
+                        'bottom': self.grid[x, y - 1]}
+            elif x + 1 > self.size - 1 and y + 1 > self.size - 1:
+                # bottom right corner
+                return {'left': self.grid[x - 1, y],
+                        'right': None,
+                        'top': self.grid[x, y + 1],
+                        'bottom': None}
 
-    def validate_move(self, liberty, color):
+    def validate_move(self, liberty, player):
         # make sure no self-capture and no piece already there
-        neighbor_color_match =np.array([n.color!=color for n in liberty.neighbors])
-        if neighbor_color_match.all():
-            pass
+        pass
+
+    def _check_for_self_capture(self, crosshair, player):
+        self_capture_flag = False
+        same, opposite, empty = self._get_same_opposite_empty(crosshair, player)
+        if len(opposite) == 4:
+            self_capture_flag = True
+        elif len(opposite) + len(same) == 4:
+            self_capture_list = []
+            for key in same:
+                self_capture, _ = self._check_chain_in_direction(crosshair, key, player)
+                self_capture_list.append(self_capture)
+            if len(self_capture_list) == len(same):
+                self_capture_flag = True
+            else:
+                self_capture_flag = False
+        return self_capture_flag
+
+    def _check_chain_in_direction(self, crosshair, direction, player):
+        chain_end = False
+        self_capture = False
+        crosshair = crosshair.neighbors[direction]
+        key_to_expect_in_same = self._get_neighbor_to_expect_on_next(direction)
+        while not chain_end:
+            same, opposite, empty = self._get_same_opposite_empty(crosshair, player)
+            if key_to_expect_in_same in same:
+                same.remove(key_to_expect_in_same)
+            if empty:
+                self_capture = False
+                chain_end = True
+            elif len(opposite) == 3:
+                self_capture = True
+                chain_end = True
+            else:
+                crosshair = crosshair.neighbors[direction]
+                self_capture, chain_end = self._check_chain_in_direction(crosshair, direction, player)
+
+        return self_capture, chain_end
 
 
-    def _get_board_state_at_liberty(self, liberty):
-        return self.grid[liberty.x, liberty.y]
+    def _get_same_opposite_empty(self, crosshair, player):
+        same = self._get_surrounding_liberties_of_one_color(crosshair, player.color)
+        empty = self._get_surrounding_empty_liberties(crosshair)
+        opposite = self._get_surrounding_liberties_of_one_color(crosshair, self._get_opposite_color(player.color))
+        return same, opposite, empty
 
+    def _get_neighbor_to_expect_on_next(self, side):
+        if side == 'left':
+            return 'right'
+        elif side == 'right':
+            return 'left'
+        elif side == 'bottom':
+            return 'top'
+        elif side == 'top':
+            return 'bottom'
+
+    def _get_opposite_color(self, color):
+        if color == 'black':
+            return 'white'
+        else:
+            return 'black'
+
+    def _get_surrounding_liberties_of_one_color(self, crosshair, color):
+        crosshair.neighbors = self._get_neighbors(crosshair.x, crosshair.y)
+        same_color_liberties = []
+        for key in crosshair.neighbors.keys():
+            this_one = crosshair.neighbors[key]
+            if self.grid[this_one.x, this_one.y] is not None:
+                if self.grid[this_one.x, this_one.y].color == color:
+                    same_color_liberties.append(key)
+        return same_color_liberties
+
+    def _get_surrounding_empty_liberties(self, crosshair):
+        none_liberties = []
+        for key in crosshair.neighbors.keys():
+            if crosshair.neighbors[key] is None:
+                none_liberties.append(key)
+        return none_liberties
 
     def _check_for_capture(self, neighbors):
         # neighbors all full with the same color (opposite to the piece in question)
@@ -98,21 +230,18 @@ class Board(object):
     def make_move(self, x, y, color):
         # make sure there is no piece there and it isn't a corner
         this_liberty = self.grid[x, y]
-        if this_liberty.color is None and not self._check_for_corner(x, y):
-            this_liberty.neighbors = self._get_neighbors(x, y)
-            # see if all are occupied
-            this_liberty.color = color
+        this_liberty.color = color
+        this_liberty.neighbors = self._get_neighbors(x, y)
+
 
 
     def _initialize_liberties_grid(self):
         self.grid = np.empty((self.size, self.size)).astype(object)
         for x in range(self.size):
             for y in range(self.size):
-                if not self._check_for_corner(x, y):
-                    # until a stone is played on a spot neighbors are None and color is None
-                    self.grid[x, y] = Liberty(x=x, y=y, neighbors=None, color=None)
-                else:
-                    self.grid[x, y] = None
+                # until a stone is played on a spot neighbors are None and color is None
+                self.grid[x, y] = CrossHair(x=x, y=y, neighbors=None, color=None)
+
         return self.grid
 
 
