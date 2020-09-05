@@ -141,32 +141,36 @@ class Board(object):
                         'bottom': None}
 
     def validate_move(self, liberty, player):
-        # make sure no self-capture and no piece already there
+        self_capture = self._check_for_self_capture(liberty, player)
+        if self_capture:
+            print("Sorry, that move is illegal because of self-capture, try again")
+            liberty = self.get_desired_move(player)
+            self.validate_move(liberty, player)
         pass
 
-    def _check_for_self_capture(self, crosshair, player):
-        self_capture_flag = False
-        same, opposite, empty = self._get_same_opposite_empty(crosshair, player)
+    def _check_for_capture(self, crosshair, color):
+        capture_flag = False
+        same, opposite, empty = self._get_same_opposite_empty(crosshair, color)
         if len(opposite) == 4:
-            self_capture_flag = True
+            capture_flag = True
         elif len(opposite) + len(same) == 4:
-            self_capture_list = []
+            capture_list = []
             for key in same:
-                self_capture, _ = self._check_chain_in_direction(crosshair, key, player)
-                self_capture_list.append(self_capture)
-            if len(self_capture_list) == len(same):
-                self_capture_flag = True
+                self_capture, _ = self._check_chain_in_direction(crosshair, key, color)
+                capture_list.append(self_capture)
+            if len(capture_list) == len(same):
+                capture_flag = True
             else:
-                self_capture_flag = False
-        return self_capture_flag
+                capture_flag = False
+        return capture_flag
 
-    def _check_chain_in_direction(self, crosshair, direction, player):
+    def _check_chain_in_direction(self, crosshair, direction, color):
         chain_end = False
         self_capture = False
         crosshair = crosshair.neighbors[direction]
         key_to_expect_in_same = self._get_neighbor_to_expect_on_next(direction)
         while not chain_end:
-            same, opposite, empty = self._get_same_opposite_empty(crosshair, player)
+            same, opposite, empty = self._get_same_opposite_empty(crosshair, color)
             if key_to_expect_in_same in same:
                 same.remove(key_to_expect_in_same)
             if empty:
@@ -177,15 +181,14 @@ class Board(object):
                 chain_end = True
             else:
                 crosshair = crosshair.neighbors[direction]
-                self_capture, chain_end = self._check_chain_in_direction(crosshair, direction, player)
+                self_capture, chain_end = self._check_chain_in_direction(crosshair, direction, color)
 
         return self_capture, chain_end
 
-
-    def _get_same_opposite_empty(self, crosshair, player):
-        same = self._get_surrounding_liberties_of_one_color(crosshair, player.color)
+    def _get_same_opposite_empty(self, crosshair, color):
+        same = self._get_surrounding_liberties_of_one_color(crosshair, color)
         empty = self._get_surrounding_empty_liberties(crosshair)
-        opposite = self._get_surrounding_liberties_of_one_color(crosshair, self._get_opposite_color(player.color))
+        opposite = self._get_surrounding_liberties_of_one_color(crosshair, self._get_opposite_color(color))
         return same, opposite, empty
 
     def _get_neighbor_to_expect_on_next(self, side):
@@ -221,17 +224,19 @@ class Board(object):
                 none_liberties.append(key)
         return none_liberties
 
-    def _check_for_capture(self, neighbors):
-        # neighbors all full with the same color (opposite to the piece in question)
-        # the piece is captured
-        pass
 
-
-    def make_move(self, x, y, color):
-        # make sure there is no piece there and it isn't a corner
+    def make_move(self, x, y, player):
+        # # make sure there is no piece there and it isn't a corner
         this_liberty = self.grid[x, y]
-        this_liberty.color = color
+        # if this_liberty.color is not None or self._check_for_capture(this_liberty, player.color):
+        #     print("Illegal move please make another")
+        #     x, y = self.get_desired_move(player)
+        # else:
+        #     capture = self._check_for_capture(this_liberty, self._get_opposite_color(player.color))
+        #
+        this_liberty.color = player.color
         this_liberty.neighbors = self._get_neighbors(x, y)
+
 
 
 
